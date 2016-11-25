@@ -2,6 +2,7 @@ type chr = char
 type str = chr list
 
 type transitions = chr -> state list
+  (* invariant: all state lists are sorted by UID *)
 and state = int * bool * transitions
   (* Each state has a unique identifier *)
 
@@ -12,8 +13,17 @@ let mk b (f : transitions) : state =
 let compare_s (i, _, _) (i', _, _) = compare i i'
 
 (* Operations on sets *)
-let (^@) l l' = l @ l'
-let union ls = List.concat ls
+let rec (^@) l l' =
+  match l, l' with
+  | [], l | l, [] -> l
+  | x :: xs, y :: ys ->
+    begin match compare_s x y with
+    | -1 -> x :: (xs ^@ l')
+    | 0 -> x :: (xs ^@ ys)
+    | 1 -> y :: (l ^@ ys)
+    | _ -> assert false
+    end
+let union ls = List.fold_left (^@) [] ls
 
 let advance (c : chr) ((_, _, f) : state) : state list =
   f c
@@ -31,20 +41,6 @@ let matches (a : state) (str : str) : bool =
   | _ ->
       List.exists matching @@ walk a str
 
-(* Merge two transition lists starting from one character. *)
-let rec merge_ts (c : chr) (ts : transitions) (ts' : transitions)
-    : transitions =
-  match ts c with
-  | [] -> ts'
-  | s :: ss ->
-    begin
-      fun c' ->
-        if c = c' then
-          blah
-        else
-
-    end
-
 let zero : state =
   mk false @@
     fun _ -> []
@@ -58,16 +54,25 @@ let plus a b =
   mk (matching a || matching b) @@
     advance_par [a; b]
 let (+.+) a b = plus a b
+let disjunction l =
+  mk (List.exists matching l) @@
+    advance_par l
 let maybe a = one +.+ a
-let rec cat a b =
-  mk (matching a && matching b) @@
-    if matching a then
-      fun c ->
-        let a_ts = advance c a in
-        let a_ts' = List.map (fun a' -> cat a' b) a_ts in
-        advance_par (b :: a_ts') c
-    else
-      fun c -> List.map (fun a' -> cat a' b) (advance c a)
+
+let rec cat (a : state) (b : state) : state =
+  if matching a then
+    mk (matching b) (fun c ->
+      let cont_a : state list = advance c a in
+      let cont_a : state list = List.map (fun x -> cat x b) cont_a in
+      let cont_b : state list = advance c b in
+      [disjunction (cont_a ^@ cont_b)]
+    )
+  else
+    mk false (fun c ->
+      let cont_a = advance c a in
+      List.map (fun x -> cat x b) cont_a
+    )
+
 let ( *.* ) a b = cat a b
 let concat l = List.fold_left cat one l
 
@@ -97,7 +102,8 @@ let tests = [
 let rec repeat n x =
   if n <= 0 then []
   else x :: repeat (pred n) x
-let n = 15
+let n = read_int ()
 let a =
   concat (repeat n (maybe (char 'a'))) *.* concat (repeat n (char 'a'))
 let str = repeat n 'a'
+let _ = matches a str
