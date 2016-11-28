@@ -1,6 +1,6 @@
 module type Regex = sig
   type t
-  type character
+  type chr
   type str
   macro matches : t -> str -> bool expr
   static zero : t
